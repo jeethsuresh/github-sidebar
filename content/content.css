@@ -1,0 +1,25 @@
+.gh-sidebar-extension-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #0969da;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.gh-sidebar-extension-btn:hover {
+  background: #f6f8fa;
+  border-color: #0969da;
+}
+.gh-sidebar-extension-btn.pinned {
+  color: #1a7f37;
+  border-color: #1a7f37;
+}
+.gh-sidebar-extension-btn + .gh-sidebar-extension-btn {
+  margin-left: 8px;
+}

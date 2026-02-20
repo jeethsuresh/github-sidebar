@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>GitHub Sidebar – Options</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 1.25rem; }
+    label { display: block; margin-top: 12px; font-weight: 500; }
+    input[type="password"], input[type="text"] { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
+    .hint { font-size: 0.875rem; color: #57606a; margin-top: 4px; }
+    button { margin-top: 16px; padding: 8px 16px; cursor: pointer; }
+    .status { margin-top: 12px; font-size: 0.875rem; }
+    .status.ok { color: #1a7f37; }
+    .status.err { color: #cf2222; }
+  </style>
+</head>
+<body>
+  <h1>GitHub Sidebar – Options</h1>
+  <p>Use a GitHub Personal Access Token so the sidebar can read PRs and trigger Actions.</p>
+  <label for="token">GitHub Personal Access Token</label>
+  <input type="password" id="token" placeholder="ghp_…" autocomplete="off">
+  <p class="hint">Scopes needed: <code>repo</code>, <code>read:user</code>, and <code>workflow</code> (to run Actions).</p>
+  <button id="save">Save</button>
+  <p class="status" id="status"></p>
+  <script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{
+  "manifest_version": 2,
+  "name": "GitHub Sidebar",
+  "version": "1.0.0",
+  "description": "Track PRs and run Actions from a sidebar on GitHub",
+  "sidebar_action": {
+    "default_title": "GitHub Sidebar",
+    "default_panel": "sidebar/sidebar.html",
+    "default_icon": "icons/sidebar.svg",
+    "open_at_install": false
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "https://github.com/*",
+    "https://api.github.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "applications": {
+    "gecko": {
+      "id": "github-sidebar@example.com",
+      "strict_min_version": "109.0"
+    }
+  }
+}

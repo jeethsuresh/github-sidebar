@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>GitHub Sidebar</title>
+  <link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+  <div id="root">
+    <header class="sidebar-header">
+      <h1>GitHub Sidebar</h1>
+      <div class="header-actions">
+        <button type="button" id="refresh-btn" title="Refresh">↻</button>
+        <a href="#" id="open-options" title="Settings">⚙️</a>
+      </div>
+    </header>
+    <div id="token-warning" class="token-warning hidden">
+      <p>No GitHub token set.</p>
+      <a href="#" id="go-options">Open options</a> to add a Personal Access Token.
+    </div>
+    <div id="content" class="hidden">
+      <div id="repos"></div>
+    </div>
+    <div id="loading" class="loading">Loading…</div>
+    <div id="error" class="error hidden"></div>
+  </div>
+  <script src="sidebar.js"></script>
+</body>
+</html>
