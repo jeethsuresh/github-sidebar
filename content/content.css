@@ -23,3 +23,9 @@
 .gh-sidebar-extension-btn + .gh-sidebar-extension-btn {
   margin-left: 8px;
 }
+
+/* Fallback PR/issue button container when toolbar selectors don't match */
+.gh-sidebar-extension-pr-fallback {
+  display: block;
+  clear: both;
+}

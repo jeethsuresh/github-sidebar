@@ -50,12 +50,20 @@ async function ghGraphQL(query, variables = {}) {
 
 // ----- Storage keys -----
 const KEY_PINNED_PR = 'pinnedPRs';      // { [repoKey]: number[] } PR numbers to track (not authored by me)
+const KEY_PINNED_ISSUES = 'pinnedIssues'; // { [repoKey]: number[] } issue numbers to track
 const KEY_PINNED_WORKFLOWS = 'pinnedWorkflows'; // { [repoKey]: Array<{ id, name, path }> }
 const KEY_TRACKED_REPOS = 'trackedRepos'; // string[] "owner/repo" to fetch my PRs and reviewer PRs for
+const KEY_LAST_VIEWED_PR = 'lastViewedPR';    // { [repoKey]: { [number]: timestamp } }
+const KEY_LAST_VIEWED_ISSUE = 'lastViewedIssue'; // { [repoKey]: { [number]: timestamp } }
 
 async function getPinnedPRs() {
   const o = await browser.storage.local.get(KEY_PINNED_PR);
   return o[KEY_PINNED_PR] || {};
+}
+
+async function getPinnedIssues() {
+  const o = await browser.storage.local.get(KEY_PINNED_ISSUES);
+  return o[KEY_PINNED_ISSUES] || {};
 }
 
 async function getPinnedWorkflows() {
@@ -63,8 +71,25 @@ async function getPinnedWorkflows() {
   return o[KEY_PINNED_WORKFLOWS] || {};
 }
 
+async function getLastViewedPRs() {
+  const o = await browser.storage.local.get(KEY_LAST_VIEWED_PR);
+  return o[KEY_LAST_VIEWED_PR] || {};
+}
+
+async function getLastViewedIssues() {
+  const o = await browser.storage.local.get(KEY_LAST_VIEWED_ISSUE);
+  return o[KEY_LAST_VIEWED_ISSUE] || {};
+}
+
 function repoKey(owner, repo) {
   return `${owner}/${repo}`;
+}
+
+function ts(isoOrMs) {
+  if (isoOrMs == null) return null;
+  if (typeof isoOrMs === 'number') return isoOrMs;
+  const t = Date.parse(isoOrMs);
+  return Number.isNaN(t) ? null : t;
 }
 
 // ----- API helpers -----
@@ -112,6 +137,43 @@ async function getPR(owner, repo, number) {
   return full;
 }
 
+/** GET /repos/{owner}/{repo}/issues?state=open - open issues (excludes PRs); filter by author */
+async function getMyOpenIssues(owner, repo, login) {
+  const list = await ghFetch(`/repos/${owner}/${repo}/issues?state=open&per_page=100`);
+  const issuesOnly = list.filter(i => !i.pull_request);
+  return issuesOnly.filter(i => i.user && i.user.login === login);
+}
+
+/** GET /repos/{owner}/{repo}/issues/{number} - single issue */
+async function getIssue(owner, repo, number) {
+  return ghFetch(`/repos/${owner}/${repo}/issues/${number}`);
+}
+
+/** Last activity for unread: latest commit on PR head + latest comment (issue or review). Returns { lastCommitAt, lastCommentAt } as ms or null. */
+async function getPRLastActivity(owner, repo, number, headSha) {
+  let lastCommitAt = null;
+  let lastCommentAt = null;
+  if (headSha) {
+    const commit = await ghFetch(`/repos/${owner}/${repo}/commits/${headSha}`).catch(() => null);
+    if (commit?.commit?.committer?.date) lastCommitAt = ts(commit.commit.committer.date);
+  }
+  const [issueComments, reviewComments] = await Promise.all([
+    ghFetch(`/repos/${owner}/${repo}/issues/${number}/comments?sort=updated&direction=desc&per_page=1`).catch(() => []),
+    ghFetch(`/repos/${owner}/${repo}/pulls/${number}/comments?sort=updated&direction=desc&per_page=1`).catch(() => []),
+  ]);
+  const issueLatest = issueComments?.[0]?.updated_at || issueComments?.[0]?.created_at;
+  const reviewLatest = reviewComments?.[0]?.updated_at || reviewComments?.[0]?.created_at;
+  if (issueLatest || reviewLatest) lastCommentAt = Math.max(ts(issueLatest) || 0, ts(reviewLatest) || 0);
+  return { lastCommitAt, lastCommentAt };
+}
+
+/** Latest comment time for an issue (for unread). Returns ms or null. */
+async function getIssueLastCommentAt(owner, repo, number) {
+  const comments = await ghFetch(`/repos/${owner}/${repo}/issues/${number}/comments?sort=updated&direction=desc&per_page=1`).catch(() => []);
+  const latest = comments?.[0]?.updated_at || comments?.[0]?.created_at;
+  return latest ? ts(latest) : null;
+}
+
 /** Commit status (legacy) + check runs for CI */
 async function getCommitStatus(owner, repo, ref) {
   const [status, checkRuns] = await Promise.all([
@@ -157,12 +219,49 @@ async function getWorkflowFile(owner, repo, path) {
   throw new Error('Workflow file not found');
 }
 
+/** List active (in_progress, queued) workflow runs for a workflow. API returns all repo runs; we filter by workflow_id. */
+async function getWorkflowRuns(owner, repo, workflowId) {
+  const [inProgress, queued] = await Promise.all([
+    ghFetch(`/repos/${owner}/${repo}/actions/runs?status=in_progress&per_page=100`).catch(() => ({ workflow_runs: [] })),
+    ghFetch(`/repos/${owner}/${repo}/actions/runs?status=queued&per_page=100`).catch(() => ({ workflow_runs: [] })),
+  ]);
+  const runs = [...(inProgress.workflow_runs || []), ...(queued.workflow_runs || [])];
+  const wid = Number(workflowId);
+  const forWorkflow = runs.filter(r => Number(r.workflow_id) === wid);
+  return forWorkflow.map(r => ({
+    id: r.id,
+    status: r.status,
+    run_number: r.run_number,
+    html_url: r.html_url,
+    actor: (r.triggering_actor || r.actor)?.login || 'Unknown',
+  }));
+}
+
 /** POST workflow_dispatch */
 async function dispatchWorkflow(owner, repo, workflowId, ref, inputs = {}) {
   await ghFetch(`/repos/${owner}/${repo}/actions/workflows/${workflowId}/dispatches`, {
     method: 'POST',
     body: JSON.stringify({ ref, inputs }),
   });
+}
+
+/** Record that the user viewed this PR/issue (for unread badges). */
+async function recordViewedPR(owner, repo, number) {
+  const key = repoKey(owner, repo);
+  const o = await browser.storage.local.get(KEY_LAST_VIEWED_PR);
+  const data = o[KEY_LAST_VIEWED_PR] || {};
+  if (!data[key]) data[key] = {};
+  data[key][String(number)] = Date.now();
+  return browser.storage.local.set({ [KEY_LAST_VIEWED_PR]: data });
+}
+
+async function recordViewedIssue(owner, repo, number) {
+  const key = repoKey(owner, repo);
+  const o = await browser.storage.local.get(KEY_LAST_VIEWED_ISSUE);
+  const data = o[KEY_LAST_VIEWED_ISSUE] || {};
+  if (!data[key]) data[key] = {};
+  data[key][String(number)] = Date.now();
+  return browser.storage.local.set({ [KEY_LAST_VIEWED_ISSUE]: data });
 }
 
 // ----- Message handling -----
@@ -179,6 +278,9 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
   if (msg.type === 'GET_PRS_WHERE_I_AM_REVIEWER') {
     return getPRsWhereIAmReviewer(msg.owner, msg.repo, msg.login);
+  }
+  if (msg.type === 'GET_MY_OPEN_ISSUES') {
+    return getMyOpenIssues(msg.owner, msg.repo, msg.login);
   }
   if (msg.type === 'GET_PINNED_PRS') {
     return getPinnedPRs();
@@ -201,6 +303,48 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return browser.storage.local.set({ [KEY_PINNED_PR]: pinned });
     });
   }
+  if (msg.type === 'GET_PINNED_ISSUES') {
+    return getPinnedIssues();
+  }
+  if (msg.type === 'ADD_PINNED_ISSUE') {
+    return getPinnedIssues().then(pinned => {
+      const key = repoKey(msg.owner, msg.repo);
+      const list = pinned[key] || [];
+      if (!list.includes(msg.issueNumber)) list.push(msg.issueNumber);
+      pinned[key] = list;
+      return browser.storage.local.set({ [KEY_PINNED_ISSUES]: pinned });
+    });
+  }
+  if (msg.type === 'REMOVE_PINNED_ISSUE') {
+    return getPinnedIssues().then(pinned => {
+      const key = repoKey(msg.owner, msg.repo);
+      let list = pinned[key] || [];
+      list = list.filter(n => n !== msg.issueNumber);
+      if (list.length) pinned[key] = list; else delete pinned[key];
+      return browser.storage.local.set({ [KEY_PINNED_ISSUES]: pinned });
+    });
+  }
+  if (msg.type === 'GET_ISSUE') {
+    return getIssue(msg.owner, msg.repo, msg.number);
+  }
+  if (msg.type === 'GET_LAST_VIEWED_PRS') {
+    return getLastViewedPRs();
+  }
+  if (msg.type === 'GET_LAST_VIEWED_ISSUES') {
+    return getLastViewedIssues();
+  }
+  if (msg.type === 'RECORD_VIEWED_PR') {
+    return recordViewedPR(msg.owner, msg.repo, msg.number);
+  }
+  if (msg.type === 'RECORD_VIEWED_ISSUE') {
+    return recordViewedIssue(msg.owner, msg.repo, msg.number);
+  }
+  if (msg.type === 'GET_PR_LAST_ACTIVITY') {
+    return getPRLastActivity(msg.owner, msg.repo, msg.number, msg.headSha);
+  }
+  if (msg.type === 'GET_ISSUE_LAST_ACTIVITY') {
+    return getIssueLastCommentAt(msg.owner, msg.repo, msg.number);
+  }
   if (msg.type === 'GET_PR') {
     return getPR(msg.owner, msg.repo, msg.number);
   }
@@ -221,6 +365,9 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
   if (msg.type === 'GET_PINNED_WORKFLOWS') {
     return getPinnedWorkflows();
+  }
+  if (msg.type === 'GET_WORKFLOW_RUNS') {
+    return getWorkflowRuns(msg.owner, msg.repo, msg.workflowId);
   }
   if (msg.type === 'ADD_PINNED_WORKFLOW') {
     return getPinnedWorkflows().then(pinned => {
@@ -273,15 +420,18 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
   if (msg.type === 'REMOVE_REPO_FROM_SIDEBAR') {
     const repoKeyStr = msg.repoKey; // "owner/repo"
-    return browser.storage.local.get([KEY_TRACKED_REPOS, KEY_PINNED_PR, KEY_PINNED_WORKFLOWS]).then(o => {
+    return browser.storage.local.get([KEY_TRACKED_REPOS, KEY_PINNED_PR, KEY_PINNED_ISSUES, KEY_PINNED_WORKFLOWS]).then(o => {
       const tracked = (o[KEY_TRACKED_REPOS] || []).filter(k => k !== repoKeyStr);
       const pinnedPRs = o[KEY_PINNED_PR] || {};
+      const pinnedIssues = o[KEY_PINNED_ISSUES] || {};
       const pinnedWorkflows = o[KEY_PINNED_WORKFLOWS] || {};
       delete pinnedPRs[repoKeyStr];
+      delete pinnedIssues[repoKeyStr];
       delete pinnedWorkflows[repoKeyStr];
       return browser.storage.local.set({
         [KEY_TRACKED_REPOS]: tracked,
         [KEY_PINNED_PR]: pinnedPRs,
+        [KEY_PINNED_ISSUES]: pinnedIssues,
         [KEY_PINNED_WORKFLOWS]: pinnedWorkflows,
       });
     });

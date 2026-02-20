@@ -1,5 +1,5 @@
 /**
- * Sidebar UI: per-repo sections for My PRs, Others' PRs, Pinned Actions.
+ * Sidebar UI: per-repo sections for My issues, Pinned issues, My PRs, Others' PRs, Pinned Actions.
  */
 
 const $ = id => document.getElementById(id);
@@ -79,15 +79,17 @@ function parseWorkflowInputs(yaml) {
   return inputs;
 }
 
-/** Build list of repos to show: tracked + any repo that has pinned PRs or workflows */
+/** Build list of repos to show: tracked + any repo that has pinned PRs, issues, or workflows */
 async function getReposToShow() {
-  const [tracked, pinnedPRs, pinnedWorkflows] = await Promise.all([
+  const [tracked, pinnedPRs, pinnedIssues, pinnedWorkflows] = await Promise.all([
     send('GET_TRACKED_REPOS'),
     send('GET_PINNED_PRS'),
+    send('GET_PINNED_ISSUES'),
     send('GET_PINNED_WORKFLOWS'),
   ]);
   const set = new Set(tracked || []);
   Object.keys(pinnedPRs || {}).forEach(k => set.add(k));
+  Object.keys(pinnedIssues || {}).forEach(k => set.add(k));
   Object.keys(pinnedWorkflows || {}).forEach(k => set.add(k));
   return Array.from(set).sort();
 }
@@ -113,7 +115,7 @@ const CI_X_SVG = '<svg class="ci-icon ci-failure" aria-hidden="true" height="16"
 const CI_PENDING_SVG = '<svg class="ci-icon ci-pending" aria-hidden="true" height="16" viewBox="0 0 16 16" width="16"><path fill="currentColor" d="M8 4a.75.75 0 0 1 .75.75v2.5h2.5a.75.75 0 0 1 0 1.5h-3.25A.75.75 0 0 1 8 8V4.75A.75.75 0 0 1 8 4Z"/><path fill="currentColor" d="M8 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0-1.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg>';
 
 function renderPR(pr, repoKey, options = {}) {
-  const { unresolved = 0, ciStatus, isPinned } = options;
+  const { unresolved = 0, ciStatus, isPinned, unread = false } = options;
   const [owner, repo] = repoKey.split('/');
   const href = `https://github.com/${owner}/${repo}/pull/${pr.number}`;
   const additions = pr.additions ?? 0;
@@ -126,6 +128,7 @@ function renderPR(pr, repoKey, options = {}) {
   const failedJobNames = ci.failedJobNames || [];
   const failedCount = failedJobNames.length;
   const badges = [];
+  if (unread) badges.push(`<span class="badge unread-badge" title="New commits or comments">Unread</span>`);
   if (unresolved > 0) badges.push(`<span class="badge danger">${unresolved} unresolved</span>`);
   if (ciStatusVal === 'success') badges.push(`<span class="badge success ci-badge" title="CI passed">${CI_CHECK_SVG}</span>`);
   else if (ciStatusVal === 'pending') badges.push(`<span class="badge neutral ci-badge" title="CI pending">${CI_PENDING_SVG}</span>`);
@@ -158,6 +161,24 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
+function renderIssue(issue, repoKey, options = {}) {
+  const { isPinned, unread = false } = options;
+  const [owner, repo] = repoKey.split('/');
+  const href = `https://github.com/${owner}/${repo}/issues/${issue.number}`;
+  const labels = (issue.labels || []).slice(0, 3).map(l => l.name);
+  const labelBadges = labels.map(name => `<span class="badge neutral">${escapeHtml(name)}</span>`).join(' ');
+  const unreadBadge = unread ? '<span class="badge unread-badge" title="New comments">Unread</span> ' : '';
+  const pinBtn = isPinned
+    ? `<button type="button" class="unpin-issue-btn" data-owner="${owner}" data-repo="${repo}" data-number="${issue.number}">Unpin</button>`
+    : '';
+  return `<div class="issue-row">` +
+    `<a href="${href}" target="_blank" class="pr-row-link">` +
+    `<span class="pr-title">#${issue.number} ${escapeHtml(issue.title || '')}</span>` +
+    `</a>${pinBtn}` +
+    `<div class="pr-meta">${unreadBadge}${formatDays(issue.created_at)}${labelBadges ? ' ' + labelBadges : ''}</div>` +
+    `</div>`;
+}
+
 function renderRepoSection(repoKey, data) {
   const [owner, repo] = repoKey.split('/');
   const repoUrl = `https://github.com/${owner}/${repo}`;
@@ -169,6 +190,19 @@ function renderRepoSection(repoKey, data) {
       </div>
       <div class="repo-section-body">
   `;
+  if (data.myIssues && data.myIssues.length > 0) {
+    html += '<div class="section-title">My open issues</div>';
+    data.myIssues.forEach(issue => {
+      html += renderIssue(issue, repoKey, { isPinned: false, unread: data.unreadIssueMap && data.unreadIssueMap[issue.number] });
+    });
+  }
+  if (data.otherIssues && data.otherIssues.length > 0) {
+    html += '<div class="section-title">Pinned issues</div>';
+    data.otherIssues.forEach(issue => {
+      const isPinned = (data.pinnedIssues || []).includes(issue.number);
+      html += renderIssue(issue, repoKey, { isPinned, unread: data.unreadIssueMap && data.unreadIssueMap[issue.number] });
+    });
+  }
   if (data.myPRs && data.myPRs.length > 0) {
     html += '<div class="section-title">My open PRs</div>';
     data.myPRs.forEach(pr => {
@@ -176,6 +210,7 @@ function renderRepoSection(repoKey, data) {
         unresolved: data.unresolvedMap && data.unresolvedMap[pr.number],
         ciStatus: data.ciMap && data.ciMap[pr.number],
         isPinned: false,
+        unread: data.unreadPRMap && data.unreadPRMap[pr.number],
       });
     });
   }
@@ -187,38 +222,54 @@ function renderRepoSection(repoKey, data) {
         unresolved: data.unresolvedMap && data.unresolvedMap[pr.number],
         ciStatus: data.ciMap && data.ciMap[pr.number],
         isPinned,
+        unread: data.unreadPRMap && data.unreadPRMap[pr.number],
       });
     });
   }
   if (data.workflows && data.workflows.length > 0) {
     html += '<div class="section-title">Pinned Actions</div>';
     data.workflows.forEach(w => {
+      const runs = (data.workflowRunsMap && data.workflowRunsMap[w.id]) || [];
+      const runsHtml = runs.length > 0
+        ? runs.map(r => `<a href="${escapeHtml(r.html_url)}" target="_blank" class="workflow-run-item" title="Started by @${escapeHtml(r.actor)}">Run #${r.run_number}</a> <span class="workflow-run-status workflow-run-status-${escapeHtml(r.status)}">${escapeHtml(r.status)}</span>`).join('<br>')
+        : '';
       html += `
         <div class="workflow-row" data-owner="${escapeHtml(owner)}" data-repo="${escapeHtml(repo)}" data-workflow-id="${w.id}" data-name="${escapeHtml(w.name)}" data-path="${escapeHtml(w.path)}">
           <span class="workflow-name">${escapeHtml(w.name)}</span>
           <div class="workflow-path">${escapeHtml(w.path)}</div>
+          <div class="workflow-runs">${runsHtml}</div>
         </div>
       `;
     });
   }
-  if (!data.myPRs?.length && !data.otherPRs?.length && !data.workflows?.length) {
-    html += '<div class="section-title" style="color:#57606a;">No PRs or actions</div>';
+  if (!data.myIssues?.length && !data.otherIssues?.length && !data.myPRs?.length && !data.otherPRs?.length && !data.workflows?.length) {
+    html += '<div class="section-title" style="color:#57606a;">No issues, PRs or actions</div>';
   }
   html += '</div></div>';
   return html;
 }
 
-async function fetchRepoData(repoKey, login, pinnedPRs, pinnedWorkflows) {
+async function fetchRepoData(repoKey, login, pinnedPRs, pinnedIssues, pinnedWorkflows, lastViewedPRs, lastViewedIssues) {
   const [owner, repo] = repoKey.split('/');
-  const myPRs = await send('GET_MY_OPEN_PRS', { owner, repo, login }).catch(() => []);
-  const reviewerPRs = await send('GET_PRS_WHERE_I_AM_REVIEWER', { owner, repo, login }).catch(() => []);
+  const [myPRs, myIssues, reviewerPRs] = await Promise.all([
+    send('GET_MY_OPEN_PRS', { owner, repo, login }).catch(() => []),
+    send('GET_MY_OPEN_ISSUES', { owner, repo, login }).catch(() => []),
+    send('GET_PRS_WHERE_I_AM_REVIEWER', { owner, repo, login }).catch(() => []),
+  ]);
   const pinnedNumbers = pinnedPRs[repoKey] || [];
+  const pinnedIssueNumbers = pinnedIssues[repoKey] || [];
   const otherByNumber = new Map(reviewerPRs.map(p => [p.number, p]));
   await Promise.all(pinnedNumbers.filter(n => !otherByNumber.has(n)).map(async (n) => {
     const pr = await send('GET_PR', { owner, repo, number: n }).catch(() => null);
     if (pr) otherByNumber.set(n, pr);
   }));
   const otherPRs = Array.from(otherByNumber.values());
+  const otherIssuesByNumber = new Map();
+  await Promise.all(pinnedIssueNumbers.map(async (n) => {
+    const issue = await send('GET_ISSUE', { owner, repo, number: n }).catch(() => null);
+    if (issue && !issue.pull_request) otherIssuesByNumber.set(n, issue);
+  }));
+  const otherIssues = Array.from(otherIssuesByNumber.values());
   let allPRs = [...myPRs, ...otherPRs];
   // Fetch full PR for mergeable_state and additions/deletions (list API does not include them)
   allPRs = await Promise.all(allPRs.map(pr =>
@@ -265,14 +316,57 @@ async function fetchRepoData(repoKey, login, pinnedPRs, pinnedWorkflows) {
       else ciMap[pr.number] = allPassed ? { status: 'success' } : { status: 'pending' };
     }
   }));
+
+  const unreadPRMap = {};
+  const lastViewedPR = lastViewedPRs && lastViewedPRs[repoKey];
+  await Promise.all(allPRs.map(async (pr) => {
+    const lastViewed = lastViewedPR && lastViewedPR[String(pr.number)];
+    if (lastViewed == null) return;
+    const activity = await send('GET_PR_LAST_ACTIVITY', { owner, repo, number: pr.number, headSha: pr.head?.sha }).catch(() => ({}));
+    const { lastCommitAt, lastCommentAt } = activity;
+    unreadPRMap[pr.number] = (lastCommitAt != null && lastCommitAt > lastViewed) || (lastCommentAt != null && lastCommentAt > lastViewed);
+  }));
+
   const workflows = pinnedWorkflows[repoKey] || [];
+  const workflowRunsMap = {};
+  await Promise.all(workflows.map(async (w) => {
+    const runs = await send('GET_WORKFLOW_RUNS', { owner, repo, workflowId: w.id }).catch(() => []);
+    workflowRunsMap[w.id] = runs || [];
+  }));
+  const openIssuesOnly = (arr) => arr.filter(i => i.state === 'open');
+  const myIssuesOpen = openIssuesOnly(myIssues);
+  const otherIssuesOpen = openIssuesOnly(otherIssues);
+  const pinnedIssueNumbersStillOpen = pinnedIssueNumbers.filter(n => otherIssuesOpen.some(i => i.number === n));
+  for (const num of pinnedIssueNumbers) {
+    const issue = otherIssues.find(i => i.number === num);
+    if (issue && issue.state !== 'open') {
+      await send('REMOVE_PINNED_ISSUE', { owner, repo, issueNumber: num });
+    }
+  }
+
+  const unreadIssueMap = {};
+  const lastViewedIssue = lastViewedIssues && lastViewedIssues[repoKey];
+  const allIssues = [...myIssuesOpen, ...otherIssuesOpen];
+  await Promise.all(allIssues.map(async (issue) => {
+    const lastViewed = lastViewedIssue && lastViewedIssue[String(issue.number)];
+    if (lastViewed == null) return;
+    const lastCommentAt = await send('GET_ISSUE_LAST_ACTIVITY', { owner, repo, number: issue.number }).catch(() => null);
+    unreadIssueMap[issue.number] = lastCommentAt != null && lastCommentAt > lastViewed;
+  }));
+
   return {
+    myIssues: myIssuesOpen,
+    otherIssues: otherIssuesOpen,
+    pinnedIssues: pinnedIssueNumbersStillOpen,
     myPRs: myPRsOpen,
     otherPRs: otherPRsOpen,
     pinnedPRs: pinnedNumbersStillOpen,
     unresolvedMap,
     ciMap,
+    unreadPRMap,
+    unreadIssueMap,
     workflows,
+    workflowRunsMap,
   };
 }
 
@@ -353,6 +447,15 @@ function delegateUnpin(e) {
   send('REMOVE_PINNED_PR', { owner, repo, pullNumber: parseInt(number, 10) }).then(refresh);
 }
 
+function delegateUnpinIssue(e) {
+  const btn = e.target.closest('.unpin-issue-btn');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const { owner, repo, number } = btn.dataset;
+  send('REMOVE_PINNED_ISSUE', { owner, repo, issueNumber: parseInt(number, 10) }).then(refresh);
+}
+
 function delegateRemoveRepo(e) {
   const btn = e.target.closest('.remove-repo-btn');
   if (!btn) return;
@@ -363,6 +466,7 @@ function delegateRemoveRepo(e) {
 }
 
 function delegateWorkflowClick(e) {
+  if (e.target.closest('a.workflow-run-item')) return;
   const row = e.target.closest('.workflow-row');
   if (!row) return;
   const { owner, repo, workflowId, name, path } = row.dataset;
@@ -386,17 +490,23 @@ async function refresh() {
       send('GET_PINNED_PRS'),
       send('GET_PINNED_WORKFLOWS'),
     ]);
+    const [pinnedIssues, lastViewedPRs, lastViewedIssues] = await Promise.all([
+      send('GET_PINNED_ISSUES'),
+      send('GET_LAST_VIEWED_PRS'),
+      send('GET_LAST_VIEWED_ISSUES'),
+    ]);
     if (repos.length === 0) {
-      reposEl.innerHTML = '<p style="padding:16px;color:#57606a;">Open a GitHub repo or a pull request page: open a GitHub repo and use “Add this repo to sidebar” in the page, or pin a PR or workflow from a PR/Actions page.</p>';
+      reposEl.innerHTML = '<p style="padding:16px;color:#57606a;">Open a GitHub repo, issue, or pull request page: use "Add this repo to sidebar" or "Pin this issue/PR" in the page, or pin a workflow from an Actions page.</p>';
       setLoading(false);
       return;
     }
     const dataByRepo = {};
     await Promise.all(repos.map(async (repoKey) => {
-      dataByRepo[repoKey] = await fetchRepoData(repoKey, login, pinnedPRs, pinnedWorkflows);
+      dataByRepo[repoKey] = await fetchRepoData(repoKey, login, pinnedPRs, pinnedIssues, pinnedWorkflows, lastViewedPRs, lastViewedIssues);
     }));
     reposEl.innerHTML = repos.map(rk => renderRepoSection(rk, dataByRepo[rk])).join('');
     reposEl.addEventListener('click', delegateUnpin);
+    reposEl.addEventListener('click', delegateUnpinIssue);
     reposEl.addEventListener('click', delegateWorkflowClick);
     reposEl.addEventListener('click', delegateRemoveRepo);
   } catch (err) {
@@ -406,10 +516,45 @@ async function refresh() {
   }
 }
 
+/** Update only workflow runs in the current DOM (no full refetch). Used for 1-min auto refresh. */
+async function refreshWorkflowRunsOnly() {
+  const hasToken = await send('GET_TOKEN').then(r => r && r.token);
+  if (!hasToken) return;
+  const repos = await getReposToShow();
+  const pinnedWorkflows = await send('GET_PINNED_WORKFLOWS');
+  if (repos.length === 0) return;
+  const runsByRow = {};
+  await Promise.all(repos.flatMap(repoKey => {
+    const [owner, repo] = repoKey.split('/');
+    const workflows = pinnedWorkflows[repoKey] || [];
+    return workflows.map(async (w) => {
+      const runs = await send('GET_WORKFLOW_RUNS', { owner, repo, workflowId: w.id }).catch(() => []);
+      const key = `${repoKey}:${w.id}`;
+      runsByRow[key] = runs;
+    });
+  }));
+  reposEl.querySelectorAll('.workflow-row').forEach(row => {
+    const { owner, repo, workflowId } = row.dataset;
+    if (!owner || !repo || !workflowId) return;
+    const key = `${owner}/${repo}:${workflowId}`;
+    const runs = runsByRow[key] || [];
+    const runsHtml = runs.length > 0
+      ? runs.map(r => `<a href="${escapeHtml(r.html_url)}" target="_blank" class="workflow-run-item" title="Started by @${escapeHtml(r.actor)}">Run #${r.run_number}</a> <span class="workflow-run-status workflow-run-status-${escapeHtml(r.status)}">${escapeHtml(r.status)}</span>`).join('<br>')
+      : '';
+    const runsEl = row.querySelector('.workflow-runs');
+    if (runsEl) runsEl.innerHTML = runsHtml;
+  });
+}
+
 refresh();
 
+const FIVE_MIN_MS = 5 * 60 * 1000;
+const ONE_MIN_MS = 60 * 1000;
+setInterval(refresh, FIVE_MIN_MS);
+setInterval(refreshWorkflowRunsOnly, ONE_MIN_MS);
+
 browser.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (changes.githubToken || changes.pinnedPRs || changes.pinnedWorkflows || changes.trackedRepos)) {
+  if (area === 'local' && (changes.githubToken || changes.pinnedPRs || changes.pinnedIssues || changes.pinnedWorkflows || changes.trackedRepos)) {
     refresh();
   }
 });
