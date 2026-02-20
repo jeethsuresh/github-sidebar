@@ -25,7 +25,8 @@
 }
 
 /* Fallback PR/issue button container when toolbar selectors don't match */
-.gh-sidebar-extension-pr-fallback {
+.gh-sidebar-extension-pr-fallback,
+.gh-sidebar-extension-issue-fallback {
   display: block;
   clear: both;
 }

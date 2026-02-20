@@ -87,13 +87,40 @@ body {
   font-size: 12px;
   color: #57606a;
 }
-.repo-section-header a {
+.repo-section-toggle {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #57606a;
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+.repo-section-toggle::before {
+  content: '▼';
+  display: block;
+}
+.repo-section.collapsed .repo-section-toggle::before {
+  transform: rotate(-90deg);
+}
+.repo-section-toggle:hover {
+  color: #0969da;
+  background: #ddf4ff;
+}
+.repo-section-header .repo-section-link {
   color: #0969da;
   text-decoration: none;
   flex: 1;
   min-width: 0;
 }
-.repo-section-header a:hover { text-decoration: underline; }
+.repo-section-header .repo-section-link:hover { text-decoration: underline; }
 .repo-section-header .remove-repo-btn {
   flex-shrink: 0;
   padding: 2px 6px;
@@ -111,17 +138,40 @@ body {
 }
 
 .repo-section-body { padding: 8px 0; }
+.repo-section.collapsed .repo-section-body { display: none; }
 
-.section-title {
+/* Collapsible sections (My open issues, Pinned PRs, etc.) */
+.collapsible-section { margin-top: 0; }
+.collapsible-section .section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 12px;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.02em;
   color: #57606a;
-  margin-top: 8px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 4px;
+  margin: 8px 0 0;
 }
-.section-title:first-child { margin-top: 0; }
+.collapsible-section:first-child .section-header { margin-top: 0; }
+.collapsible-section .section-header:hover {
+  background: #f6f8fa;
+  color: #1f2328;
+}
+.collapsible-section .section-chevron {
+  font-size: 8px;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.collapsible-section.collapsed .section-chevron {
+  transform: rotate(-90deg);
+}
+.collapsible-section .section-body { overflow: hidden; }
+.collapsible-section.collapsed .section-body { display: none; }
 
 .pr-row, .issue-row, .workflow-row {
   display: block;
@@ -167,8 +217,21 @@ body {
 .ci-pending { color: #57606a; }
 .ci-fail-count { font-size: 11px; font-weight: 600; margin-left: 1px; }
 
-.workflow-row { cursor: pointer; }
-.workflow-name { font-weight: 500; }
+.workflow-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: default;
+}
+.workflow-page-link {
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+.workflow-page-link:hover .workflow-name { color: #0550ae; }
+.workflow-name { font-weight: 500; color: #0969da; }
 .workflow-path { font-size: 11px; color: #57606a; margin-top: 2px; }
 .workflow-runs { margin-top: 6px; font-size: 11px; }
 .workflow-run-item { color: #0969da; text-decoration: none; }
@@ -176,6 +239,21 @@ body {
 .workflow-run-status { margin-left: 4px; padding: 1px 6px; border-radius: 12px; font-size: 10px; font-weight: 500; }
 .workflow-run-status-in_progress { background: #ddf4ff; color: #0969da; }
 .workflow-run-status-queued { background: #d0d7de; color: #57606a; }
+.workflow-run-dispatch-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid #d0d7de;
+  background: #f6f8fa;
+  color: #1f2328;
+  cursor: pointer;
+}
+.workflow-run-dispatch-btn:hover {
+  background: #eaeef2;
+  border-color: #afb8c1;
+}
 
 .modal-overlay {
   position: fixed;
