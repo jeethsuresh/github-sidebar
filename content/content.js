@@ -435,3 +435,13 @@ if (isPRPage()) {
     if (!document.querySelector('.gh-sidebar-extension-group')) injectPRButtons();
   }, 2500);
 }
+
+// Retry issue buttons (GitHub often renders issue header/toolbar dynamically)
+if (isIssuePage()) {
+  setTimeout(() => {
+    if (!document.querySelector('.gh-sidebar-extension-issue-group')) injectIssueButtons();
+  }, 800);
+  setTimeout(() => {
+    if (!document.querySelector('.gh-sidebar-extension-issue-group')) injectIssueButtons();
+  }, 2500);
+}

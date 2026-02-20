@@ -179,83 +179,130 @@ function renderIssue(issue, repoKey, options = {}) {
     `</div>`;
 }
 
+const COLLAPSED_REPOS_KEY = 'github-sidebar-collapsed-repos';
+const COLLAPSED_SECTIONS_KEY = 'github-sidebar-collapsed-sections';
+
+function getCollapsedRepos() {
+  try {
+    const raw = sessionStorage.getItem(COLLAPSED_REPOS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (_) { return []; }
+}
+
+function setCollapsedRepos(repos) {
+  sessionStorage.setItem(COLLAPSED_REPOS_KEY, JSON.stringify(repos));
+}
+
+function getCollapsedSections() {
+  try {
+    const raw = sessionStorage.getItem(COLLAPSED_SECTIONS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (_) { return {}; }
+}
+
+function setCollapsedSections(sections) {
+  sessionStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify(sections));
+}
+
+function renderCollapsibleSection(repoKey, sectionId, title, contentHtml) {
+  return `
+    <div class="collapsible-section" data-repo="${escapeHtml(repoKey)}" data-section-id="${escapeHtml(sectionId)}">
+      <div class="section-header" role="button" tabindex="0">
+        <span class="section-chevron" aria-hidden="true">▼</span>
+        <span class="section-title-text">${escapeHtml(title)}</span>
+      </div>
+      <div class="section-body">${contentHtml}</div>
+    </div>`;
+}
+
 function renderRepoSection(repoKey, data) {
   const [owner, repo] = repoKey.split('/');
   const repoUrl = `https://github.com/${owner}/${repo}`;
   let html = `
     <div class="repo-section" data-repo="${escapeHtml(repoKey)}">
       <div class="repo-section-header">
-        <a href="${repoUrl}" target="_blank">${escapeHtml(repoKey)}</a>
+        <button type="button" class="repo-section-toggle" aria-label="Collapse repository" title="Collapse/expand"></button>
+        <a href="${repoUrl}" target="_blank" class="repo-section-link">${escapeHtml(repoKey)}</a>
         <button type="button" class="remove-repo-btn" data-repo="${escapeHtml(repoKey)}" title="Remove repo from sidebar">×</button>
       </div>
       <div class="repo-section-body">
   `;
   if (data.myIssues && data.myIssues.length > 0) {
-    html += '<div class="section-title">My open issues</div>';
+    let sectionHtml = '';
     data.myIssues.forEach(issue => {
-      html += renderIssue(issue, repoKey, { isPinned: false, unread: data.unreadIssueMap && data.unreadIssueMap[issue.number] });
+      sectionHtml += renderIssue(issue, repoKey, { isPinned: false, unread: data.unreadIssueMap && data.unreadIssueMap[issue.number] });
     });
+    html += renderCollapsibleSection(repoKey, 'my-issues', 'My open issues', sectionHtml);
   }
   if (data.otherIssues && data.otherIssues.length > 0) {
-    html += '<div class="section-title">Pinned issues</div>';
+    let sectionHtml = '';
     data.otherIssues.forEach(issue => {
       const isPinned = (data.pinnedIssues || []).includes(issue.number);
-      html += renderIssue(issue, repoKey, { isPinned, unread: data.unreadIssueMap && data.unreadIssueMap[issue.number] });
+      sectionHtml += renderIssue(issue, repoKey, { isPinned, unread: data.unreadIssueMap && data.unreadIssueMap[issue.number] });
     });
+    html += renderCollapsibleSection(repoKey, 'pinned-issues', 'Pinned issues', sectionHtml);
   }
   if (data.myPRs && data.myPRs.length > 0) {
-    html += '<div class="section-title">My open PRs</div>';
+    let sectionHtml = '';
     data.myPRs.forEach(pr => {
-      html += renderPR(pr, repoKey, {
+      sectionHtml += renderPR(pr, repoKey, {
         unresolved: data.unresolvedMap && data.unresolvedMap[pr.number],
         ciStatus: data.ciMap && data.ciMap[pr.number],
         isPinned: false,
         unread: data.unreadPRMap && data.unreadPRMap[pr.number],
       });
     });
+    html += renderCollapsibleSection(repoKey, 'my-prs', 'My open PRs', sectionHtml);
   }
   const pinnedPRList = (data.otherPRs || []).filter(pr => (data.pinnedPRs || []).includes(pr.number));
   const reviewPRList = (data.otherPRs || []).filter(pr => !(data.pinnedPRs || []).includes(pr.number));
   if (pinnedPRList.length > 0) {
-    html += '<div class="section-title">Pinned PRs</div>';
+    let sectionHtml = '';
     pinnedPRList.forEach(pr => {
-      html += renderPR(pr, repoKey, {
+      sectionHtml += renderPR(pr, repoKey, {
         unresolved: data.unresolvedMap && data.unresolvedMap[pr.number],
         ciStatus: data.ciMap && data.ciMap[pr.number],
         isPinned: true,
         unread: data.unreadPRMap && data.unreadPRMap[pr.number],
       });
     });
+    html += renderCollapsibleSection(repoKey, 'pinned-prs', 'Pinned PRs', sectionHtml);
   }
   if (reviewPRList.length > 0) {
-    html += '<div class="section-title">Review</div>';
+    let sectionHtml = '';
     reviewPRList.forEach(pr => {
-      html += renderPR(pr, repoKey, {
+      sectionHtml += renderPR(pr, repoKey, {
         unresolved: data.unresolvedMap && data.unresolvedMap[pr.number],
         ciStatus: data.ciMap && data.ciMap[pr.number],
         isPinned: false,
         unread: data.unreadPRMap && data.unreadPRMap[pr.number],
       });
     });
+    html += renderCollapsibleSection(repoKey, 'review', 'Review', sectionHtml);
   }
   if (data.workflows && data.workflows.length > 0) {
-    html += '<div class="section-title">Pinned Actions</div>';
+    let sectionHtml = '';
     data.workflows.forEach(w => {
       const runs = (data.workflowRunsMap && data.workflowRunsMap[w.id]) || [];
       const runsHtml = runs.length > 0
         ? runs.map(r => `<a href="${escapeHtml(r.html_url)}" target="_blank" class="workflow-run-item" title="Started by @${escapeHtml(r.actor)}">Run #${r.run_number}</a> <span class="workflow-run-status workflow-run-status-${escapeHtml(r.status)}">${escapeHtml(r.status)}</span>`).join('<br>')
         : '';
-      html += `
+      const workflowPageUrl = `https://github.com/${owner}/${repo}/actions/workflows/${encodeURIComponent(w.path)}`;
+      sectionHtml += `
         <div class="workflow-row" data-owner="${escapeHtml(owner)}" data-repo="${escapeHtml(repo)}" data-workflow-id="${w.id}" data-name="${escapeHtml(w.name)}" data-path="${escapeHtml(w.path)}">
-          <span class="workflow-name">${escapeHtml(w.name)}</span>
-          <div class="workflow-path">${escapeHtml(w.path)}</div>
-          <div class="workflow-runs">${runsHtml}</div>
+          <a href="${escapeHtml(workflowPageUrl)}" target="_blank" rel="noopener" class="workflow-page-link">
+            <span class="workflow-name">${escapeHtml(w.name)}</span>
+            <div class="workflow-path">${escapeHtml(w.path)}</div>
+            <div class="workflow-runs">${runsHtml}</div>
+          </a>
+          <button type="button" class="workflow-run-dispatch-btn" title="Run workflow">Run</button>
         </div>
       `;
     });
+    html += renderCollapsibleSection(repoKey, 'pinned-actions', 'Pinned Actions', sectionHtml);
   }
   if (!data.myIssues?.length && !data.otherIssues?.length && !data.myPRs?.length && !data.otherPRs?.length && !data.workflows?.length) {
-    html += '<div class="section-title" style="color:#57606a;">No issues, PRs or actions</div>';
+    html += renderCollapsibleSection(repoKey, 'empty', 'No issues, PRs or actions', '<div class="section-title" style="color:#57606a;padding-left:0;">No issues, PRs or actions</div>');
   }
   html += '</div></div>';
   return html;
@@ -477,12 +524,63 @@ function delegateRemoveRepo(e) {
   send('REMOVE_REPO_FROM_SIDEBAR', { repoKey }).then(refresh);
 }
 
+function delegateRepoToggle(e) {
+  const btn = e.target.closest('.repo-section-toggle');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const section = btn.closest('.repo-section');
+  if (!section) return;
+  const repoKey = section.dataset.repo;
+  section.classList.toggle('collapsed');
+  const collapsed = section.classList.contains('collapsed');
+  const repos = getCollapsedRepos().filter(r => r !== repoKey);
+  if (collapsed) repos.push(repoKey);
+  setCollapsedRepos(repos);
+}
+
+function delegateSectionToggle(e) {
+  const header = e.target.closest('.section-header');
+  if (!header) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const collapsible = header.closest('.collapsible-section');
+  if (!collapsible) return;
+  const repoKey = collapsible.dataset.repo;
+  const sectionId = collapsible.dataset.sectionId;
+  collapsible.classList.toggle('collapsed');
+  const collapsed = collapsible.classList.contains('collapsed');
+  const sections = getCollapsedSections();
+  const repoSections = sections[repoKey] || [];
+  const set = new Set(repoSections);
+  if (collapsed) set.add(sectionId); else set.delete(sectionId);
+  sections[repoKey] = set.size ? Array.from(set) : [];
+  setCollapsedSections(sections);
+}
+
+function applyCollapsedState() {
+  const collapsedRepos = getCollapsedRepos();
+  reposEl.querySelectorAll('.repo-section').forEach(section => {
+    if (collapsedRepos.includes(section.dataset.repo)) section.classList.add('collapsed');
+  });
+  const collapsedSections = getCollapsedSections();
+  reposEl.querySelectorAll('.collapsible-section').forEach(el => {
+    const list = collapsedSections[el.dataset.repo];
+    if (list && list.includes(el.dataset.sectionId)) el.classList.add('collapsed');
+  });
+}
+
 function delegateWorkflowClick(e) {
   if (e.target.closest('a.workflow-run-item')) return;
-  const row = e.target.closest('.workflow-row');
-  if (!row) return;
-  const { owner, repo, workflowId, name, path } = row.dataset;
-  openWorkflowModal(owner, repo, workflowId, name, path);
+  const runBtn = e.target.closest('.workflow-run-dispatch-btn');
+  if (runBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    const row = runBtn.closest('.workflow-row');
+    if (!row) return;
+    const { owner, repo, workflowId, name, path } = row.dataset;
+    openWorkflowModal(owner, repo, workflowId, name, path);
+  }
 }
 
 async function refresh() {
@@ -517,10 +615,19 @@ async function refresh() {
       dataByRepo[repoKey] = await fetchRepoData(repoKey, login, pinnedPRs, pinnedIssues, pinnedWorkflows, lastViewedPRs, lastViewedIssues);
     }));
     reposEl.innerHTML = repos.map(rk => renderRepoSection(rk, dataByRepo[rk])).join('');
+    applyCollapsedState();
     reposEl.addEventListener('click', delegateUnpin);
     reposEl.addEventListener('click', delegateUnpinIssue);
     reposEl.addEventListener('click', delegateWorkflowClick);
     reposEl.addEventListener('click', delegateRemoveRepo);
+    reposEl.addEventListener('click', delegateRepoToggle);
+    reposEl.addEventListener('click', delegateSectionToggle);
+    reposEl.addEventListener('keydown', (e) => {
+      if (e.target.closest('.section-header') && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        e.target.closest('.section-header').click();
+      }
+    });
   } catch (err) {
     showError(err.message || 'Failed to load');
   } finally {
