@@ -134,6 +134,10 @@ body {
 .pr-row:hover, .issue-row:hover, .workflow-row:hover { background: #f6f8fa; }
 
 .pr-row-link { text-decoration: none; color: inherit; }
+.pr-row .pr-row-link { display: inline-block; max-width: calc(100% - 60px); vertical-align: middle; }
+.pr-row .unpin-btn { vertical-align: middle; }
+.issue-row .pr-row-link { display: inline-block; max-width: calc(100% - 60px); vertical-align: middle; }
+.issue-row .unpin-issue-btn { vertical-align: middle; }
 .pr-title { font-weight: 500; color: #0969da; }
 .pr-meta {
   font-size: 11px;
@@ -264,5 +268,14 @@ body {
   background: #fff;
   cursor: pointer;
   margin-left: 8px;
+  flex-shrink: 0;
 }
 .pin-btn:hover, .unpin-btn:hover, .unpin-issue-btn:hover { background: #f6f8fa; }
+.unpin-btn, .unpin-issue-btn {
+  color: #57606a;
+}
+.unpin-btn:hover, .unpin-issue-btn:hover {
+  color: #cf2222;
+  border-color: #ff818266;
+  background: #ffebe9;
+}

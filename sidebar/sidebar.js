@@ -214,14 +214,26 @@ function renderRepoSection(repoKey, data) {
       });
     });
   }
-  if (data.otherPRs && data.otherPRs.length > 0) {
-    html += '<div class="section-title">Review / Pinned</div>';
-    data.otherPRs.forEach(pr => {
-      const isPinned = (data.pinnedPRs || []).includes(pr.number);
+  const pinnedPRList = (data.otherPRs || []).filter(pr => (data.pinnedPRs || []).includes(pr.number));
+  const reviewPRList = (data.otherPRs || []).filter(pr => !(data.pinnedPRs || []).includes(pr.number));
+  if (pinnedPRList.length > 0) {
+    html += '<div class="section-title">Pinned PRs</div>';
+    pinnedPRList.forEach(pr => {
       html += renderPR(pr, repoKey, {
         unresolved: data.unresolvedMap && data.unresolvedMap[pr.number],
         ciStatus: data.ciMap && data.ciMap[pr.number],
-        isPinned,
+        isPinned: true,
+        unread: data.unreadPRMap && data.unreadPRMap[pr.number],
+      });
+    });
+  }
+  if (reviewPRList.length > 0) {
+    html += '<div class="section-title">Review</div>';
+    reviewPRList.forEach(pr => {
+      html += renderPR(pr, repoKey, {
+        unresolved: data.unresolvedMap && data.unresolvedMap[pr.number],
+        ciStatus: data.ciMap && data.ciMap[pr.number],
+        isPinned: false,
         unread: data.unreadPRMap && data.unreadPRMap[pr.number],
       });
     });

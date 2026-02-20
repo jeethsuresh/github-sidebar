@@ -250,6 +250,12 @@ function injectIssueButtons() {
     '.Layout-main .d-flex.flex-wrap',
     '.pull-request-header .d-flex',
     '.gh-header-title',
+    '.gh-title',
+    '[data-pjax="#repo-content-pjax-container"] .d-flex.flex-wrap',
+    'main .d-flex.flex-items-center.flex-wrap',
+    '.Box-header .d-flex',
+    'article .d-flex',
+    '[role="main"] .d-flex',
   ];
   let target = null;
   for (const sel of toolbarSelectors) {
@@ -259,15 +265,36 @@ function injectIssueButtons() {
       break;
     }
   }
+  // Fallback: inject near issue title when no toolbar matches (GitHub issue page DOM varies)
+  if (!target) {
+    const main = document.querySelector('main, [role="main"], .repository-content, .Layout-main');
+    const titleLike = main && main.querySelector('.gh-header-title, .js-issue-title, h1, [data-number]');
+    if (titleLike && titleLike.parentNode) {
+      const wrap = document.createElement('div');
+      wrap.className = 'gh-sidebar-extension-issue-fallback';
+      wrap.style.marginTop = '8px';
+      wrap.style.marginBottom = '12px';
+      wrap.appendChild(group);
+      titleLike.parentNode.insertBefore(wrap, titleLike.nextSibling);
+      target = wrap;
+    } else if (main) {
+      const wrap = document.createElement('div');
+      wrap.className = 'gh-sidebar-extension-issue-fallback';
+      wrap.style.padding = '12px 0';
+      wrap.appendChild(group);
+      main.insertBefore(wrap, main.firstChild);
+      target = wrap;
+    }
+  }
   if (target) {
-    if (target.classList.contains('gh-header-title')) {
+    if (target.classList && target.classList.contains('gh-header-title')) {
       if (target.parentNode) {
         const wrap = document.createElement('div');
         wrap.style.marginTop = '8px';
         wrap.appendChild(group);
         target.parentNode.insertBefore(wrap, target.nextSibling);
       }
-    } else {
+    } else if (!target.classList || !target.classList.contains('gh-sidebar-extension-issue-fallback')) {
       target.appendChild(group);
     }
     send('RECORD_VIEWED_ISSUE', { owner: repo.owner, repo: repo.repo, number: issueNum });
