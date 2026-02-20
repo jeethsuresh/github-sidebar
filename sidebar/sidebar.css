@@ -123,17 +123,21 @@ body {
 }
 .section-title:first-child { margin-top: 0; }
 
-.pr-row, .workflow-row {
+.pr-row, .issue-row, .workflow-row {
   display: block;
   padding: 8px 12px;
   color: inherit;
   border-bottom: 1px solid #f0f0f0;
   transition: background 0.1s;
 }
-.pr-row:last-child, .workflow-row:last-child { border-bottom: none; }
-.pr-row:hover, .workflow-row:hover { background: #f6f8fa; }
+.pr-row:last-child, .issue-row:last-child, .workflow-row:last-child { border-bottom: none; }
+.pr-row:hover, .issue-row:hover, .workflow-row:hover { background: #f6f8fa; }
 
 .pr-row-link { text-decoration: none; color: inherit; }
+.pr-row .pr-row-link { display: inline-block; max-width: calc(100% - 60px); vertical-align: middle; }
+.pr-row .unpin-btn { vertical-align: middle; }
+.issue-row .pr-row-link { display: inline-block; max-width: calc(100% - 60px); vertical-align: middle; }
+.issue-row .unpin-issue-btn { vertical-align: middle; }
 .pr-title { font-weight: 500; color: #0969da; }
 .pr-meta {
   font-size: 11px;
@@ -154,6 +158,7 @@ body {
 .pr-meta .badge.danger { background: #ffebe9; color: #cf2222; }
 .pr-meta .badge.success { background: #dafbe1; color: #1a7f37; }
 .pr-meta .badge.neutral { background: #d0d7de; color: #57606a; }
+.pr-meta .badge.unread-badge { background: #ddf4ff; color: #0969da; font-weight: 600; }
 
 .ci-badge { display: inline-flex; align-items: center; gap: 2px; }
 .ci-icon { flex-shrink: 0; }
@@ -165,6 +170,12 @@ body {
 .workflow-row { cursor: pointer; }
 .workflow-name { font-weight: 500; }
 .workflow-path { font-size: 11px; color: #57606a; margin-top: 2px; }
+.workflow-runs { margin-top: 6px; font-size: 11px; }
+.workflow-run-item { color: #0969da; text-decoration: none; }
+.workflow-run-item:hover { text-decoration: underline; }
+.workflow-run-status { margin-left: 4px; padding: 1px 6px; border-radius: 12px; font-size: 10px; font-weight: 500; }
+.workflow-run-status-in_progress { background: #ddf4ff; color: #0969da; }
+.workflow-run-status-queued { background: #d0d7de; color: #57606a; }
 
 .modal-overlay {
   position: fixed;
@@ -249,7 +260,7 @@ body {
 .modal-footer button.primary:hover { background: #0550ae; }
 .modal-footer button:hover { background: #eaeef2; }
 
-.pin-btn, .unpin-btn {
+.pin-btn, .unpin-btn, .unpin-issue-btn {
   padding: 2px 8px;
   font-size: 11px;
   border-radius: 4px;
@@ -257,5 +268,14 @@ body {
   background: #fff;
   cursor: pointer;
   margin-left: 8px;
+  flex-shrink: 0;
 }
-.pin-btn:hover, .unpin-btn:hover { background: #f6f8fa; }
+.pin-btn:hover, .unpin-btn:hover, .unpin-issue-btn:hover { background: #f6f8fa; }
+.unpin-btn, .unpin-issue-btn {
+  color: #57606a;
+}
+.unpin-btn:hover, .unpin-issue-btn:hover {
+  color: #cf2222;
+  border-color: #ff818266;
+  background: #ffebe9;
+}

@@ -17,6 +17,15 @@ function getPRNumber() {
   return m ? parseInt(m[1], 10) : null;
 }
 
+function isIssuePage() {
+  return /^\/[^/]+\/[^/]+\/issues\/\d+/.test(window.location.pathname);
+}
+
+function getIssueNumber() {
+  const m = window.location.pathname.match(/\/issues\/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 function isActionsWorkflowPage() {
   // Match /owner/repo/actions/workflows/<anything> (GitHub uses .yml/.yaml or workflow name slug)
   return /^\/[^/]+\/[^/]+\/actions\/workflows\/[^/]+/.test(window.location.pathname);
@@ -57,6 +66,10 @@ function addPRToSidebar(owner, repo, pullNumber) {
   return send('ADD_PINNED_PR', { owner, repo, pullNumber });
 }
 
+function addIssueToSidebar(owner, repo, issueNumber) {
+  return send('ADD_PINNED_ISSUE', { owner, repo, issueNumber });
+}
+
 function addWorkflowByPath(owner, repo, path) {
   return send('ADD_PINNED_WORKFLOW_BY_PATH', { owner, repo, path });
 }
@@ -68,6 +81,11 @@ async function getPinnedPRs() {
 
 async function getPinnedWorkflows() {
   const pinned = await send('GET_PINNED_WORKFLOWS');
+  return pinned || {};
+}
+
+async function getPinnedIssues() {
+  const pinned = await send('GET_PINNED_ISSUES');
   return pinned || {};
 }
 
@@ -121,10 +139,18 @@ function injectPRButtons() {
     '.gh-header-actions',
     '[data-test-selector="pr-toolbar"]',
     '[data-testid="pr-toolbar"]',
-    '.gh-header .flex-1.d-flex', // header row that holds title + actions
-    '.Layout-main .d-flex.flex-wrap', // main layout button row
+    '.gh-header .flex-1.d-flex',
+    '.Layout-main .d-flex.flex-wrap',
     '.pull-request-header .d-flex',
     '.gh-header-title',
+    // Additional selectors for current GitHub PR UI
+    '.gh-title',
+    '[data-pjax="#repo-content-pjax-container"] .d-flex.flex-wrap',
+    'main .d-flex.flex-items-center.flex-wrap',
+    '.react-blank-state',
+    '.Box-header .d-flex',
+    'article .d-flex',
+    '[role="main"] .d-flex',
   ];
   let target = null;
   for (const sel of toolbarSelectors) {
@@ -134,23 +160,150 @@ function injectPRButtons() {
       break;
     }
   }
+  // Fallback: inject near PR title (look for element containing PR # or title)
+  if (!target) {
+    const main = document.querySelector('main, [role="main"], .repository-content, .Layout-main');
+    const titleLike = main && main.querySelector('.gh-header-title, .js-issue-title, h1, [data-number]');
+    if (titleLike && titleLike.parentNode) {
+      const wrap = document.createElement('div');
+      wrap.className = 'gh-sidebar-extension-pr-fallback';
+      wrap.style.marginTop = '8px';
+      wrap.style.marginBottom = '12px';
+      wrap.appendChild(group);
+      titleLike.parentNode.insertBefore(wrap, titleLike.nextSibling);
+      target = wrap;
+    } else if (main) {
+      const wrap = document.createElement('div');
+      wrap.className = 'gh-sidebar-extension-pr-fallback';
+      wrap.style.padding = '12px 0';
+      wrap.appendChild(group);
+      main.insertBefore(wrap, main.firstChild);
+      target = wrap;
+    }
+  }
   if (target) {
-    if (target.classList.contains('gh-header-title')) {
+    if (target.classList && target.classList.contains('gh-header-title')) {
       if (target.parentNode) {
         const wrap = document.createElement('div');
         wrap.style.marginTop = '8px';
         wrap.appendChild(group);
         target.parentNode.insertBefore(wrap, target.nextSibling);
       }
-    } else {
+    } else if (!target.classList || !target.classList.contains('gh-sidebar-extension-pr-fallback')) {
       target.appendChild(group);
     }
+    send('RECORD_VIEWED_PR', { owner: repo.owner, repo: repo.repo, number: prNum });
+  }
+}
+
+function injectIssueButtons() {
+  if (!isIssuePage()) return;
+  const repo = getRepoFromPath();
+  const issueNum = getIssueNumber();
+  if (!repo || !issueNum) return;
+
+  const existing = document.querySelector('.gh-sidebar-extension-issue-group');
+  if (existing) return;
+
+  const group = document.createElement('div');
+  group.className = 'gh-sidebar-extension-group gh-sidebar-extension-issue-group';
+  group.style.display = 'inline-flex';
+  group.style.alignItems = 'center';
+  group.style.marginLeft = '8px';
+  group.style.flexWrap = 'wrap';
+  group.style.gap = '8px';
+
+  const issueBtn = createButton('Pin this issue in sidebar');
+  const repoBtn = createButton('Add this repo to sidebar');
+
+  getPinnedIssues().then(pinned => {
+    const key = `${repo.owner}/${repo.repo}`;
+    const list = pinned[key] || [];
+    if (list.includes(issueNum)) {
+      issueBtn.textContent = 'Pinned in sidebar';
+      issueBtn.classList.add('pinned');
+      issueBtn.disabled = true;
+    }
+  });
+
+  issueBtn.addEventListener('click', async () => {
+    await addIssueToSidebar(repo.owner, repo.repo, issueNum);
+    issueBtn.textContent = 'Pinned in sidebar';
+    issueBtn.classList.add('pinned');
+    issueBtn.disabled = true;
+  });
+
+  repoBtn.addEventListener('click', async () => {
+    await addRepoToSidebar(repo.owner, repo.repo);
+    repoBtn.textContent = 'Added';
+    repoBtn.disabled = true;
+  });
+
+  group.appendChild(issueBtn);
+  group.appendChild(repoBtn);
+
+  const toolbarSelectors = [
+    '.gh-header-actions',
+    '[data-test-selector="pr-toolbar"]',
+    '[data-testid="pr-toolbar"]',
+    '.gh-header .flex-1.d-flex',
+    '.Layout-main .d-flex.flex-wrap',
+    '.pull-request-header .d-flex',
+    '.gh-header-title',
+    '.gh-title',
+    '[data-pjax="#repo-content-pjax-container"] .d-flex.flex-wrap',
+    'main .d-flex.flex-items-center.flex-wrap',
+    '.Box-header .d-flex',
+    'article .d-flex',
+    '[role="main"] .d-flex',
+  ];
+  let target = null;
+  for (const sel of toolbarSelectors) {
+    const el = document.querySelector(sel);
+    if (el && el.offsetParent !== null) {
+      target = el;
+      break;
+    }
+  }
+  // Fallback: inject near issue title when no toolbar matches (GitHub issue page DOM varies)
+  if (!target) {
+    const main = document.querySelector('main, [role="main"], .repository-content, .Layout-main');
+    const titleLike = main && main.querySelector('.gh-header-title, .js-issue-title, h1, [data-number]');
+    if (titleLike && titleLike.parentNode) {
+      const wrap = document.createElement('div');
+      wrap.className = 'gh-sidebar-extension-issue-fallback';
+      wrap.style.marginTop = '8px';
+      wrap.style.marginBottom = '12px';
+      wrap.appendChild(group);
+      titleLike.parentNode.insertBefore(wrap, titleLike.nextSibling);
+      target = wrap;
+    } else if (main) {
+      const wrap = document.createElement('div');
+      wrap.className = 'gh-sidebar-extension-issue-fallback';
+      wrap.style.padding = '12px 0';
+      wrap.appendChild(group);
+      main.insertBefore(wrap, main.firstChild);
+      target = wrap;
+    }
+  }
+  if (target) {
+    if (target.classList && target.classList.contains('gh-header-title')) {
+      if (target.parentNode) {
+        const wrap = document.createElement('div');
+        wrap.style.marginTop = '8px';
+        wrap.appendChild(group);
+        target.parentNode.insertBefore(wrap, target.nextSibling);
+      }
+    } else if (!target.classList || !target.classList.contains('gh-sidebar-extension-issue-fallback')) {
+      target.appendChild(group);
+    }
+    send('RECORD_VIEWED_ISSUE', { owner: repo.owner, repo: repo.repo, number: issueNum });
   }
 }
 
 function injectRepoButton() {
   const repo = getRepoFromPath();
-  if (!repo || isPRPage() || isActionsWorkflowPage()) return;
+  if (!repo || isPRPage() || isIssuePage() || isActionsWorkflowPage()) return;
   if (window.location.pathname !== `/${repo.owner}/${repo.repo}` && !window.location.pathname.startsWith(`/${repo.owner}/${repo.repo}/`)) return;
 
   const existing = document.querySelector('.gh-sidebar-extension-repo-btn');
@@ -244,6 +397,7 @@ function injectWorkflowButton() {
 
 function run() {
   injectPRButtons();
+  injectIssueButtons();
   injectRepoButton();
   injectWorkflowButton();
 }
@@ -256,7 +410,8 @@ if (document.readyState === 'loading') {
 
 const observer = new MutationObserver(() => {
   if (!document.querySelector('.gh-sidebar-extension-group') && isPRPage()) injectPRButtons();
-  if (!document.querySelector('.gh-sidebar-extension-repo-btn') && !isPRPage() && !isActionsWorkflowPage()) injectRepoButton();
+  if (!document.querySelector('.gh-sidebar-extension-issue-group') && isIssuePage()) injectIssueButtons();
+  if (!document.querySelector('.gh-sidebar-extension-repo-btn') && !isPRPage() && !isIssuePage() && !isActionsWorkflowPage()) injectRepoButton();
   if (!document.querySelector('.gh-sidebar-extension-workflow-btn') && isActionsWorkflowPage()) injectWorkflowButton();
 });
 observer.observe(document.body, { childList: true, subtree: true });
@@ -269,4 +424,14 @@ if (isActionsWorkflowPage()) {
   setTimeout(() => {
     if (!document.querySelector('.gh-sidebar-extension-workflow-btn')) injectWorkflowButton();
   }, 4000);
+}
+
+// Retry PR buttons (GitHub often renders PR header/toolbar dynamically)
+if (isPRPage()) {
+  setTimeout(() => {
+    if (!document.querySelector('.gh-sidebar-extension-group')) injectPRButtons();
+  }, 800);
+  setTimeout(() => {
+    if (!document.querySelector('.gh-sidebar-extension-group')) injectPRButtons();
+  }, 2500);
 }

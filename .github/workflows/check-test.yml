@@ -1,0 +1,37 @@
+name: Check test file
+
+on:
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual run (optional)'
+        required: false
+        default: 'Manual trigger'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read test file
+        id: read
+        run: |
+          if [ ! -f test ]; then
+            echo "result=false"
+            echo "::error file=test::File 'test' not found in repo root"
+            exit 1
+          fi
+          content=$(cat test | tr -d '[:space:]')
+          if [ "$content" = "true" ]; then
+            echo "result=true"
+          else
+            echo "result=false"
+            echo "::error file=test::File 'test' must contain exactly 'true' (got content that resolves to false)"
+            exit 1
+          fi
+
+      - name: Check passed
+        run: echo "Test file check passed (content is true)."
